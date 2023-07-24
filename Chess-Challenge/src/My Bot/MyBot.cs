@@ -12,16 +12,17 @@ public class MyBot : IChessBot
     {
         weAreWhite = board.IsWhiteToMove;
         mList = new List<Move>();
-        Move? move = MinMax(board,4,int.MinValue,int.MaxValue,true).Item1;
-        return move.Value;
+        var t = MinMax(board,4,int.MinValue,int.MaxValue,true);
+        Console.WriteLine(t.Item2);
+        return t.Item1!.Value;
     }
 
-    public (Move?,int) MinMax(Board b,int depth,double alpha, double beta,bool maximizingPlayer){
+    public (Move?,float) MinMax(Board b,int depth,double alpha, double beta,bool maximizingPlayer){
         if(depth==0){
             return (null,this.eval(b));
         }
         if (maximizingPlayer){
-            int? maxEval = null;
+            float? maxEval = null;
             Move? maxMove = null;
             foreach(var child in b.GetLegalMoves().OrderBy(m=>m.IsCapture ? 0 : 1)){
                 mList.Add(child);
@@ -32,7 +33,7 @@ public class MyBot : IChessBot
                 if(maxEval==null||eval>maxEval){
                     maxMove = child;
                 }
-                maxEval = Math.Max(maxEval??int.MinValue,eval);
+                maxEval = Math.Max(maxEval??float.MinValue,eval);
                 alpha = Math.Max(alpha,eval);
                 if(beta <= alpha){
                     break;
@@ -41,9 +42,9 @@ public class MyBot : IChessBot
             if(maxMove==null&&depth==5){
                 Console.WriteLine("what");
             }
-            return (maxMove,maxEval??int.MinValue);
+            return (maxMove,maxEval??(b.IsDraw()?0:int.MinValue));
         }else{
-            int? minEval = null;
+            float? minEval = null;
             Move? minMove = null;
             foreach(var child in b.GetLegalMoves().OrderBy(m=>m.IsCapture ? 0 : 1)){
                 mList.Add(child);
@@ -54,29 +55,66 @@ public class MyBot : IChessBot
                 if(minEval==null||eval<minEval){
                     minMove = child;
                 }
-                minEval = Math.Min(minEval??int.MaxValue,eval);
+                minEval = Math.Min(minEval??float.MaxValue,eval);
                 beta = Math.Min(beta,eval);
                 if(beta <= alpha){
                     break;
                 }
             }
-            return (minMove,minEval??int.MaxValue);
+            return (minMove,minEval??(b.IsDraw()?0:int.MaxValue));
         }
     }
 
-    public int eval(Board b){ //change to isWhiteToMove?
+    public float eval(Board b){ //change to isWhiteToMove?
         if(b.IsInCheckmate()){
             return 10000 * (b.IsWhiteToMove!=weAreWhite?1:-1);
         }
-        return b.GetPieceList(PieceType.Pawn,weAreWhite).Count
-        + b.GetPieceList(PieceType.Bishop,weAreWhite).Count*3
-        + b.GetPieceList(PieceType.Knight,weAreWhite).Count*3
-        + b.GetPieceList(PieceType.Rook,weAreWhite).Count*5
-        + b.GetPieceList(PieceType.Queen,weAreWhite).Count*8
-        -b.GetPieceList(PieceType.Pawn,!weAreWhite).Count
-        - b.GetPieceList(PieceType.Bishop,!weAreWhite).Count*3
-        - b.GetPieceList(PieceType.Knight,!weAreWhite).Count*3
-        - b.GetPieceList(PieceType.Rook,!weAreWhite).Count*5
-        - b.GetPieceList(PieceType.Queen,!weAreWhite).Count*8;
+        var value = 0f;
+        var isEnemy = false;
+        var extra = 0f;
+        var extra2 = 0f;
+        var enemyKingSquare = b.GetKingSquare(!weAreWhite);
+        foreach (var pL in b.GetAllPieceLists()){
+            isEnemy = pL.IsWhitePieceList != weAreWhite;
+            
+            foreach(var p in pL){
+                float factor = 1;
+                if(!isEnemy){
+                    if (b.SquareIsAttackedByOpponent(p.Square)){
+                        factor*=0.9f;
+                    }
+                    if(!p.IsPawn){
+                    var distance = MathF.Abs(p.Square.File - enemyKingSquare.File)+MathF.Abs(p.Square.Rank - enemyKingSquare.Rank);
+                    extra += (15-distance)*1/30f;
+                    }else{
+                        extra2 += (8-MathF.Abs(p.Square.Rank-(weAreWhite?8:0)))*1/20f;
+                    }
+                }
+                if(isEnemy){
+                    if (b.SquareIsAttackedByOpponent(p.Square)){
+                        factor*=1.05f;
+                    }
+                }
+                value += factor * ToValue(p.PieceType)*( isEnemy?-1f:1f);
+            }
+        }
+        if(b.IsDraw()){
+            return 0;
+        }
+        value+=extra;
+        value +=extra2;
+        return value;
     }
+
+
+
+    public static float ToValue(PieceType p) => p switch{
+        PieceType.None => throw new ArgumentOutOfRangeException("Not right"),
+        PieceType.Pawn => 1,
+        PieceType.Bishop => 3,
+        PieceType.Knight => 3,
+        PieceType.Rook => 5,
+        PieceType.Queen => 9,
+        PieceType.King => 9,
+    };
 }
